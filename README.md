@@ -5,5 +5,5 @@ Atmosphere package to test PR #13899
 
 ```sh
 meteor add disable-oplog
-meteor add alternative-oplog
+meteor add ericmartin989:alternative-oplog
 ```

@@ -1,6 +1,8 @@
 Package.describe({
+    name: 'ericmartin989:alternative-oplog',
   summary: 'Alternative oplog tailing for Meteor',
-  version: '1.0.0',
+  version: '0.0.1',
+   git: 'https://github.com/ericm546/alternative-oplog.git'
 });
 
 Npm.depends({
@@ -13,6 +15,7 @@ Npm.depends({
 });
 
 Package.onUse(function (api) {
+  api.versionsFrom(["3.0.1", "3.1", "3.2"]);
   api.use('npm-mongo', 'server');
   api.use('allow-deny');
   api.use([
@@ -29,7 +32,7 @@ Package.onUse(function (api) {
     'mongo-dev-server',
     'logging',
   ]);
-  api.use('mongo-decimal', 'server');
+  api.use('mongo-decimal@0.2.0', 'server');
   api.use('disable-oplog', 'server', { weak: true });
 
   // If the facts package is loaded, publish some statistics.

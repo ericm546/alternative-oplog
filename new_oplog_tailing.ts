@@ -1,23 +1,26 @@
-import isEmpty from 'lodash.isempty';
-import { Meteor } from 'meteor/meteor';
-import { NpmModuleMongodb } from 'meteor/npm-mongo';
-import { isDeepStrictEqual } from 'node:util';
+import isEmpty from "lodash.isempty";
+import { Meteor } from "meteor/meteor";
+import { NpmModuleMongodb } from "meteor/npm-mongo";
+import { isDeepStrictEqual } from "node:util";
 import { MongoID } from 'meteor/mongo-id';
 
-import type { NewOplogObserveDriver, OplogEventType } from './new_oplog_observe_driver';
-import { getDedicatedChannel, getFieldsOfInterestFromAll } from './utils';
-import type { CatchingUpResolver, OplogEntry } from './oplog_tailing';
+import type {
+  NewOplogObserveDriver,
+  OplogEventType,
+} from "./new_oplog_observe_driver";
+import { getDedicatedChannel, getFieldsOfInterestFromAll } from "./utils";
+import type { CatchingUpResolver, OplogEntry } from "./oplog_tailing";
 
 const { Long } = NpmModuleMongodb;
 
-const OPLOG_COLLECTION = 'oplog.rs';
+const OPLOG_COLLECTION = "oplog.rs";
 
 const TAIL_TIMEOUT = +(process.env.METEOR_OPLOG_TAIL_TIMEOUT || 30000);
 
 export class NewOplogTailing {
   queue: any;
   store: { [key: string]: NewOplogObserveDriver[] };
-  private _oplogLastEntryConnection: any;
+  private _oplogLastEntryConnection: any
   private _oplogUrl: string;
   private _dbName: string;
   private _oplogOptions: {
@@ -27,7 +30,9 @@ export class NewOplogTailing {
   private _lastProcessedTS: any;
   private _tailHandle: any;
   private _readyPromiseResolver!: () => void;
-  private _readyPromise = new Promise<void>((r) => (this._readyPromiseResolver = r));
+  private _readyPromise = new Promise<void>(
+    (r) => (this._readyPromiseResolver = r)
+  );
   private _catchingUpResolvers: CatchingUpResolver[] = [];
   private _stopped = false;
   _startTrailingPromise: Promise<void> | null = null;
@@ -37,8 +42,10 @@ export class NewOplogTailing {
     this._dbName = dbName;
     this.queue = new Meteor._AsynchronousQueue();
     this.store = {};
-    const includeCollections = Meteor.settings?.packages?.mongo?.oplogIncludeCollections;
-    const excludeCollections = Meteor.settings?.packages?.mongo?.oplogExcludeCollections;
+    const includeCollections =
+      Meteor.settings?.packages?.mongo?.oplogIncludeCollections;
+    const excludeCollections =
+      Meteor.settings?.packages?.mongo?.oplogExcludeCollections;
     if (includeCollections?.length && excludeCollections?.length) {
       throw new Error(
         "Can't use both mongo oplog settings oplogIncludeCollections and oplogExcludeCollections at the same time."
@@ -112,10 +119,10 @@ export class NewOplogTailing {
           op: 1,
           ts: 1,
           ns: 1,
-          'o._id': 1,
-          'o2._id': 1,
-          'o.drop': 1,
-          'o.applyOps': 1,
+          "o._id": 1,
+          "o2._id": 1,
+          "o.drop": 1,
+          "o.applyOps": 1,
         },
       },
     };
@@ -137,7 +144,7 @@ export class NewOplogTailing {
   }
 
   private async processOplogDocument(oplogDocument: any) {
-    if (oplogDocument.ns === 'admin.$cmd') {
+    if (oplogDocument.ns === "admin.$cmd") {
       if (oplogDocument.o.applyOps) {
         // This was a successful transaction, so we need to apply the
         // operations that were involved.
@@ -153,16 +160,30 @@ export class NewOplogTailing {
           })
         );
       }
-      throw new Error('Unknown command ' + JSON.stringify(oplogDocument));
+      throw new Error("Unknown command " + JSON.stringify(oplogDocument));
     }
 
     if (
-      typeof oplogDocument.ns !== 'string' ||
-      !oplogDocument.ns.startsWith(this._dbName + '.')
+      typeof oplogDocument.ns !== "string" ||
+      !oplogDocument.ns.startsWith(this._dbName + ".")
     ) {
       return;
     }
     const collectionName = oplogDocument.ns.slice(this._dbName.length + 1);
+    if (oplogDocument.o.drop) {
+      for (const subscribers of Object.values(this.store)) {
+        for (const subscriber of subscribers) {
+          if (
+            !subscriber._stopped &&
+            subscriber.observableCollection?.collectionName ===
+              oplogDocument.o.drop
+          ) {
+            await subscriber.reload();
+          }
+        }
+      }
+      return;
+    }
 
     const id = oplogDocument.o?._id ?? oplogDocument.o2?._id;
     if (!collectionName || !id) {
@@ -170,12 +191,12 @@ export class NewOplogTailing {
     }
 
     let eventType: OplogEventType;
-    if (oplogDocument.op === 'i') {
-      eventType = 'INSERT';
-    } else if (oplogDocument.op === 'u') {
-      eventType = 'UPDATE';
-    } else if (oplogDocument.op === 'd') {
-      eventType = 'REMOVE';
+    if (oplogDocument.op === "i") {
+      eventType = "INSERT";
+    } else if (oplogDocument.op === "u") {
+      eventType = "UPDATE";
+    } else if (oplogDocument.op === "d") {
+      eventType = "REMOVE";
     } else {
       throw new Meteor.Error(
         `Unknown oplog event type "${
@@ -192,9 +213,8 @@ export class NewOplogTailing {
       return;
     }
 
-    const collection = subscribers[0].observableCollection!.collection;
 
-    const doc = await this.getDoc(collection, subscribers, id, eventType);
+    const doc = await this.getDoc( subscribers, id, eventType);
     if (!doc) {
       return;
     }
@@ -222,20 +242,21 @@ export class NewOplogTailing {
 
   queueGetDoc: Promise<any> = Promise.resolve();
   async getDoc(
-    collection: any,
     subscribers: NewOplogObserveDriver[],
     id: any,
     eventType: OplogEventType
   ) {
     const stringifiedId = MongoID.idStringify(id);
-    if (eventType === 'REMOVE') {
+    if (eventType === "REMOVE") {
       this.queueGetDoc = this.queueGetDoc.then(() => {
-        return { _id: stringifiedId };
+        return { _id: id };
       });
       return this.queueGetDoc;
     }
+    const observableCollection = subscribers[0].observableCollection!;
+    const mongoHandle = observableCollection.mongoHandle
 
-    const collectionName = collection._name;
+    const collectionName = observableCollection.collectionName;
 
     const fieldsOfInterest = getFieldsOfInterestFromAll(subscribers);
     this.documentsToFetch.set(stringifiedId, {
@@ -268,11 +289,12 @@ export class NewOplogTailing {
           count++;
         }
       }
-      const items = await collection
-        .find(
+      const items = await mongoHandle.
+        find(collectionName,
           { _id: { $in: documentIds } },
           {
-            projection: fieldsOfInterest === true ? undefined : fieldsOfInterest,
+            projection:
+              fieldsOfInterest === true ? undefined : fieldsOfInterest,
           }
         )
         .fetchAsync();
@@ -299,23 +321,23 @@ export class NewOplogTailing {
     const oplogCriteria: any[] = [
       {
         $or: [
-          { op: { $in: ['i', 'u', 'd'] } },
-          { op: 'c', 'o.drop': { $exists: true } },
-          { op: 'c', 'o.dropDatabase': 1 },
-          { op: 'c', 'o.applyOps': { $exists: true } },
+          { op: { $in: ["i", "u", "d"] } },
+          { op: "c", "o.drop": { $exists: true } },
+          { op: "c", "o.dropDatabase": 1 },
+          { op: "c", "o.applyOps": { $exists: true } },
         ],
       },
     ];
 
     const nsRegex = new RegExp(
-      '^(?:' +
+      "^(?:" +
         [
           // @ts-ignore
-          Meteor._escapeRegExp(this._dbName + '.'),
+          Meteor._escapeRegExp(this._dbName + "."),
           // @ts-ignore
-          Meteor._escapeRegExp('admin.$cmd'),
-        ].join('|') +
-        ')'
+          Meteor._escapeRegExp("admin.$cmd"),
+        ].join("|") +
+        ")"
     );
 
     if (this._oplogOptions.excludeCollections?.length) {
@@ -359,7 +381,7 @@ export class NewOplogTailing {
 
   async waitUntilCaughtUp(): Promise<void> {
     if (this._stopped) {
-      throw new Error('Called waitUntilCaughtUp on stopped handle!');
+      throw new Error("Called waitUntilCaughtUp on stopped handle!");
     }
 
     await this._readyPromise;
@@ -376,7 +398,7 @@ export class NewOplogTailing {
         );
         break;
       } catch (e) {
-        Meteor._debug('Got exception while reading last entry', e);
+        Meteor._debug("Got exception while reading last entry", e);
         // @ts-ignore
         await Meteor.sleep(100);
       }
@@ -388,7 +410,7 @@ export class NewOplogTailing {
 
     const ts = lastEntry.ts;
     if (!ts) {
-      throw Error('oplog entry without ts: ' + JSON.stringify(lastEntry));
+      throw Error("oplog entry without ts: " + JSON.stringify(lastEntry));
     }
 
     if (this._lastProcessedTS && ts.lessThanOrEqual(this._lastProcessedTS)) {

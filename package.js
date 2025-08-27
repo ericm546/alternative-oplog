@@ -1,7 +1,7 @@
 Package.describe({
     name: 'ericmartin989:alternative-oplog',
   summary: 'Alternative oplog tailing for Meteor',
-  version: '0.0.1',
+  version: '0.0.2',
    git: 'https://github.com/ericm546/alternative-oplog.git'
 });
 
